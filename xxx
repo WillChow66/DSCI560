@@ -1,2 +1,97 @@
-aslkdjwqkledjwdwdew
-wedwed
+import pandas as pd
+import pdfplumber
+import csv
+import os
+import shutil  # Import shutil for copying files
+from selenium import webdriver
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.firefox.options import Options
+from bs4 import BeautifulSoup
+
+# Function to scrape and save HTML content to CSV
+def html_to_csv(url, output_csv_path, raw_data_folder):
+    html_file_path = os.path.join(raw_data_folder, 'la_hospitals.html')
+    service = FirefoxService("/snap/bin/geckodriver")
+    options = Options()
+    options.headless = True
+    driver = webdriver.Firefox(service=service, options=options)
+    
+    try:
+        driver.get(url)
+        driver.implicitly_wait(10)
+        html_content = driver.page_source
+        with open(html_file_path, 'w', encoding='utf-8') as file:
+            file.write(html_content)
+        print("HTML data saved to:", html_file_path)
+    except Exception as e:
+        print("An error occurred with WebDriver:", e)
+    finally:
+        driver.quit()
+
+    try:
+        with open(html_file_path, 'r', encoding='utf-8') as file:
+            soup = BeautifulSoup(file.read(), 'html.parser')
+        
+        table = soup.find('table')
+        hospitals_data = []
+        for row in table.find_all('tr')[1:]:
+            cols = [ele.text.strip() for ele in row.find_all('td')]
+            if len(cols) > 5:
+                hospitals_data.append(cols[:6])
+
+        with open(output_csv_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Facility Name', 'Address', 'Type', 'Total Beds', 'Emergency Medical Service Level', 'Initial License Year'])
+            writer.writerows(hospitals_data)
+        print("HTML data extracted and saved to CSV at:", output_csv_path)
+    except Exception as e:
+        print("Failed to process HTML file:", e)
+
+# Function to handle Excel and CSV data
+def handle_file(filepath, processed_folder):
+    file_ext = os.path.splitext(filepath)[1].lower()
+    output_csv_path = os.path.join(processed_folder, os.path.basename(filepath).replace(file_ext, '.csv'))
+    
+    if file_ext == '.xlsx':
+        data = pd.read_excel(filepath)
+        data.to_csv(output_csv_path, index=False)
+        print("Excel data loaded and saved to CSV at:", output_csv_path)
+        display_data_info(data)
+    elif file_ext == '.csv':
+        shutil.copy(filepath, output_csv_path)
+        print("CSV file copied to:", output_csv_path)
+        data = pd.read_csv(output_csv_path)
+        display_data_info(data)
+
+# Function to extract text from PDF and save to CSV
+def pdf_to_csv(pdf_path, csv_path):
+    with pdfplumber.open(pdf_path) as pdf:
+        all_text = ''
+        for page in pdf.pages:
+            all_text += page.extract_text() + '\n'
+    with open(csv_path, 'w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Extracted Text'])
+        writer.writerow([all_text])
+    print("PDF text extracted and saved to CSV at:", csv_path)
+
+# Function to display basic data info
+def display_data_info(data):
+    print("First 5 records:")
+    print(data.head())
+    print("\nDataset dimensions:", data.shape)
+    print("Missing data in each column:")
+    print(data.isnull().sum())
+
+# Paths (You need to replace these with actual paths when running the script)
+html_url = 'https://www.laalmanac.com/health/he02.php'
+excel_file_path = 'HospInfo.csv'
+pdf_file_path = '../XiaolinZhou_8157970159/s41746-024-01040-9.pdf'
+raw_data_folder = '../data/raw_data'
+processed_folder = '../data/processed_data'
+
+# Execute functions
+html_to_csv(html_url, os.path.join(processed_folder, 'la_county_hospitals.csv'), raw_data_folder)
+handle_file(excel_file_path, processed_folder)
+pdf_to_csv(pdf_file_path, os.path.join(processed_folder, 'extracted_text.csv'))
+
